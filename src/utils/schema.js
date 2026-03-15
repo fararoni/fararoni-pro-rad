@@ -22,6 +22,8 @@ export const FIELD_TYPES = [
   { value: 'button',     label: 'Botón',         group: 'Acción' },
   { value: 'image',      label: 'Imagen',        group: 'Acción' },
   { value: 'file',       label: 'Archivo',       group: 'Acción' },
+  { value: 'nav_menu',   label: 'Menú de navegación', group: 'Layout' },
+  { value: 'copyright',  label: 'Copyright',     group: 'Layout' },
 ];
 
 export const FORM_TYPES = [
@@ -30,6 +32,10 @@ export const FORM_TYPES = [
   { value: 'menu',   label: 'Menu — Navegación' },
   { value: 'search', label: 'Search — Búsqueda + resultados' },
   { value: 'report', label: 'Report — Solo lectura con totales' },
+  { value: 'header', label: 'Header — Cabecera de página' },
+  { value: 'footer', label: 'Footer — Pie de página' },
+  { value: 'hero',   label: 'Hero — Sección principal destacada' },
+  { value: 'modal',  label: 'Modal — Ventana emergente' },
 ];
 
 export const DB_TYPES = ['oracle','mysql','postgres','mssql','sqlite'];
@@ -49,6 +55,7 @@ export const fieldTypeColor = (type) => {
     datetime: '#bc8cff', hidden: '#8b949e', label: '#8b949e', richtext: '#388bfd',
     listbox: '#d97706', multiselect: '#d97706', radio: '#d97706', checkbox: '#d97706',
     url_link: '#3fb950', button: '#f85149', image: '#bc8cff', file: '#3fb950',
+    nav_menu: '#388bfd', copyright: '#8b949e',
   };
   return map[type] || '#8b949e';
 };
@@ -102,20 +109,42 @@ export const newPage = (name = 'Nueva Página') => ({
   page_rules: [],
 });
 
-export const newForm = (name = 'Nuevo Formulario') => ({
-  id: genId(),
-  title: name,
-  description: '',
-  type: 'record',
-  order: 0,
-  data_source: { table: '', sql_custom: null, order_field: '', order_dir: 'asc', where: '' },
-  operations: { allow_insert: true, allow_update: true, allow_delete: false, allow_search: true, allow_export: false },
-  pagination: { enabled: false, records_per_page: 20, show_prev_next: true, show_page_numbers: true },
-  layout: { orientation: 'vertical', grid_type: 'tabular' },
-  parameters: [],
-  fields: [],
-  rules: [],
-});
+const DEFAULT_FORM_TITLES = { header: 'Header', footer: 'Footer', hero: 'Hero', modal: 'Modal' };
+
+const defaultFieldsFor = (type) => {
+  if (type === 'header') {
+    return [{ ...newField('MENU_PRINCIPAL'), caption: 'Menú Principal', type: 'nav_menu', description: 'Menú de navegación principal' }];
+  }
+  if (type === 'footer') {
+    return [{ ...newField('COPYRIGHT'), caption: '© 2024 - Todos los derechos reservados', type: 'copyright', description: 'Texto de copyright' }];
+  }
+  if (type === 'hero') {
+    return [
+      { ...newField('HERO_TITULO'),    caption: 'Título principal',       type: 'label',    description: 'Texto del título grande del hero' },
+      { ...newField('HERO_SUBTITULO'), caption: 'Subtítulo / descripción', type: 'textarea', description: 'Texto descriptivo debajo del título' },
+      { ...newField('HERO_CTA'),       caption: 'Comenzar ahora',          type: 'button',   description: 'Botón de llamada a la acción' },
+    ];
+  }
+  return [];
+};
+
+export const newForm = (name, type = 'record') => {
+  const title = name || DEFAULT_FORM_TITLES[type] || 'Nuevo Formulario';
+  return {
+    id: genId(),
+    title,
+    description: '',
+    type,
+    order: 0,
+    data_source: { table: '', sql_custom: null, order_field: '', order_dir: 'asc', where: '' },
+    operations: { allow_insert: true, allow_update: true, allow_delete: false, allow_search: true, allow_export: false },
+    pagination: { enabled: false, records_per_page: 20, show_prev_next: true, show_page_numbers: true },
+    layout: { orientation: 'vertical', grid_type: 'tabular' },
+    parameters: [],
+    fields: defaultFieldsFor(type),
+    rules: [],
+  };
+};
 
 export const newField = (name = 'NUEVO_CAMPO') => ({
   id: genId(),

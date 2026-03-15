@@ -178,8 +178,8 @@ export const useProjectStore = create((set, get) => ({
   },
 
   // Form operations
-  addForm: (pageId) => {
-    const form = newForm();
+  addForm: (pageId, type) => {
+    const form = newForm(undefined, type);
     set(state => {
       const pages = state.currentProject.pages.map(p =>
         p.id === pageId ? { ...p, forms: [...(p.forms || []), form] } : p

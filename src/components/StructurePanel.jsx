@@ -4,7 +4,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { fieldTypeColor } from '../utils/schema';
 
 const FormTypeIcon = ({ type }) => {
-  const icons = { record: '📄', grid: '📊', menu: '☰', search: '🔍', report: '📈' };
+  const icons = { record: '📄', grid: '📊', menu: '☰', search: '🔍', report: '📈', header: '🔝', footer: '🔚', hero: '🌟', modal: '🪟' };
   return <span style={{ fontSize: 12 }}>{icons[type] || '📄'}</span>;
 };
 
