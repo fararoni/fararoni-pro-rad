@@ -51,6 +51,7 @@ export const useProjectStore = create((set, get) => ({
   projects: [],             // list of {id, name, updated_at, page_count}
   currentProject: null,     // the full project JSON
   expandedNodes: new Set(),
+  clipboardForm: null,      // { form, sourcePageId } — form in clipboard for paste
 
   // Actions: navigation
   goHome: () => set({ screen: 'home', currentProject: null, selectedNode: null }),
@@ -348,6 +349,62 @@ export const useProjectStore = create((set, get) => ({
     });
   },
 
+  duplicateForm: (pageId, formId) => {
+    set(state => {
+      const project = _updatePageInProject(state.currentProject, pageId, p => {
+        const idx = (p.forms || []).findIndex(f => f.id === formId);
+        if (idx === -1) return p;
+        const original = p.forms[idx];
+        const clone = {
+          ...original,
+          id: genId(),
+          title: original.title + ' (copia)',
+          fields: (original.fields || []).map(f => ({ ...f, id: genId() })),
+          rules: (original.rules || []).map(r => ({ ...r, id: genId() })),
+        };
+        const forms = [...p.forms];
+        forms.splice(idx + 1, 0, clone);
+        return { ...p, forms };
+      });
+      return { currentProject: project, saveStatus: 'unsaved' };
+    });
+  },
+
+  copyForm: (pageId, formId) => {
+    const state = get();
+    const page = _findPage(state.currentProject, pageId);
+    const form = page?.forms?.find(f => f.id === formId);
+    if (!form) return;
+    // Deep clone with fresh IDs ready for paste
+    const clone = {
+      ...form,
+      id: genId(),
+      title: form.title + ' (pegado)',
+      fields: (form.fields || []).map(f => ({ ...f, id: genId() })),
+      rules: (form.rules || []).map(r => ({ ...r, id: genId() })),
+    };
+    set({ clipboardForm: clone });
+  },
+
+  pasteForm: (pageId) => {
+    set(state => {
+      if (!state.clipboardForm) return {};
+      // Generate fresh IDs every paste so you can paste multiple times
+      const form = {
+        ...state.clipboardForm,
+        id: genId(),
+        fields: (state.clipboardForm.fields || []).map(f => ({ ...f, id: genId() })),
+        rules: (state.clipboardForm.rules || []).map(r => ({ ...r, id: genId() })),
+      };
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: [...(p.forms || []), form],
+      }));
+      return { currentProject: project, saveStatus: 'unsaved' };
+    });
+  },
+
+  clearClipboard: () => set({ clipboardForm: null }),
+
   moveForm: (formId, sourcePageId, targetPageId, targetIndex) => {
     set(state => {
       let movedForm = null;
@@ -465,9 +522,24 @@ export const useProjectStore = create((set, get) => ({
   fillGridFromCatalog: (pageId, formId, catalogId) => {
     set(state => {
       const catalog = (state.currentProject.catalogs || []).find(c => c.id === catalogId);
-      if (!catalog || catalog.input_mode !== 'tabla' || !(catalog.columns || []).length) return {};
+      if (!catalog) return {};
+
+      // Resolve columns from tabla or json mode
+      let columns = [];
+      if (catalog.input_mode === 'tabla') {
+        columns = catalog.columns || [];
+      } else if (catalog.input_mode === 'json') {
+        try {
+          const data = JSON.parse(catalog.data || '[]');
+          if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
+            columns = Object.keys(data[0]).map(k => ({ name: k.toUpperCase(), label: k, type: 'text' }));
+          }
+        } catch {}
+      }
+      if (!columns.length) return {};
+
       const typeMap = { text: 'text', number: 'number', currency: 'currency', date: 'date', boolean: 'checkbox', email: 'email' };
-      const generatedFields = catalog.columns.map(col => ({
+      const generatedFields = columns.map(col => ({
         ...newField(col.name),
         caption: col.label || col.name,
         type: typeMap[col.type] || 'text',

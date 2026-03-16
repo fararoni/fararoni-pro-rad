@@ -4,6 +4,26 @@ import { useProjectStore } from '../store/useProjectStore';
 /* ─── Catalog context so FieldPreviewItem can resolve catalog items ─── */
 const CatalogsCtx = createContext([]);
 
+// Parses a tabla or json catalog into { columns, rows }
+const parseTableCatalog = (catalog) => {
+  if (!catalog) return { columns: [], rows: [] };
+  if (catalog.input_mode === 'tabla') {
+    const columns = (catalog.columns || []).map(c => ({ id: c.id || c.name, name: c.name, label: c.label || c.name, type: c.type || 'text' }));
+    return { columns, rows: [] }; // no sample data, just structure
+  }
+  if (catalog.input_mode === 'json') {
+    try {
+      const data = JSON.parse(catalog.data || '[]');
+      if (!Array.isArray(data) || data.length === 0) return { columns: [], rows: [] };
+      const first = data[0];
+      if (typeof first !== 'object' || Array.isArray(first)) return { columns: [], rows: [] };
+      const columns = Object.keys(first).map(k => ({ id: k, name: k.toUpperCase(), label: k, type: 'text' }));
+      return { columns, rows: data };
+    } catch { return { columns: [], rows: [] }; }
+  }
+  return { columns: [], rows: [] };
+};
+
 const parseCatalogItems = (catalog) => {
   if (!catalog?.data?.trim()) return [];
   try {
@@ -188,47 +208,96 @@ function HeroPreview({ form }) {
   );
 }
 
+const GRID_MOCK_VALUES = { text: (r) => `Valor ${r}`, number: (r) => String(r * 10), currency: (r) => `$ ${(r * 1250).toLocaleString()}`, date: (r) => `${String(r + 10).padStart(2,'0')}/03/2025`, email: (r) => `usuario${r}@ejemplo.com`, listbox: () => 'Activo', radio: () => 'Sí', checkbox: (r) => r % 2 === 0 ? '✓' : '—', url_link: () => '→ Ver', boolean: (r) => r % 2 === 0 ? '✓' : '—' };
+
 function GridPreview({ form }) {
-  const visibleFields = (form.fields || []).filter(f => f.type !== 'hidden');
-  const mockRows = visibleFields.length === 0 ? [] : [1, 2, 3].map(row => visibleFields.reduce((acc, f) => {
-    const vals = { text: `Valor ${row}`, number: String(row * 10), currency: `$ ${(row * 1250).toLocaleString()}`, date: `${String(row + 10).padStart(2,'0')}/03/2025`, email: `usuario${row}@ejemplo.com`, listbox: 'Activo', radio: 'Sí', checkbox: row % 2 === 0 ? '✓' : '—', url_link: '→ Ver', button: '', label: f.caption };
-    acc[f.id] = vals[f.type] || `Dato ${row}`;
-    return acc;
-  }, {}));
+  const catalogs = useContext(CatalogsCtx);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = form.pagination?.records_per_page || 5;
+
+  // Check if grid has a tabla field as data source
+  const tablaField = (form.fields || []).find(f => f.type === 'tabla' && f.tabla_config?.catalog_id);
+  const tablaCatalog = tablaField ? catalogs.find(c => c.id === tablaField.tabla_config.catalog_id) : null;
+  const { columns: catColumns, rows: catRows } = tablaCatalog ? parseTableCatalog(tablaCatalog) : { columns: [], rows: [] };
+
+  // Decide display mode: catalog-driven or field-driven
+  const useCatalog = catColumns.length > 0;
+
+  const visibleFields = useCatalog ? [] : (form.fields || []).filter(f => f.type !== 'hidden' && f.type !== 'tabla');
+  const totalRows = useCatalog ? (catRows.length || 3) : 3;
+  const totalPages = Math.max(1, Math.ceil(totalRows / PER_PAGE));
+  const clampedPage = Math.min(page, totalPages);
+
+  const displayColumns = useCatalog ? catColumns : visibleFields;
+
+  // Build display rows
+  const allRows = useCatalog
+    ? (catRows.length > 0
+        ? catRows
+        : Array.from({ length: 3 }, (_, i) => catColumns.reduce((acc, col) => ({ ...acc, [col.id]: `—` }), {})))
+    : Array.from({ length: 3 }, (_, i) => visibleFields.reduce((acc, f) => {
+        const fn = GRID_MOCK_VALUES[f.type];
+        acc[f.id] = fn ? fn(i + 1) : `Dato ${i + 1}`;
+        return acc;
+      }, {}));
+
+  const pageRows = allRows.slice((clampedPage - 1) * PER_PAGE, clampedPage * PER_PAGE);
+  const from = (clampedPage - 1) * PER_PAGE + 1;
+  const to = Math.min(clampedPage * PER_PAGE, totalRows);
+
+  const cellKey = (row, col) => useCatalog ? row[col.id] : row[col.id];
+
+  const btnStyle = (active) => ({
+    background: active ? 'rgba(56,139,253,0.15)' : 'transparent',
+    border: '1px solid', borderColor: active ? '#388bfd' : '#21262d',
+    borderRadius: 4, color: active ? '#388bfd' : '#8b949e',
+    padding: '3px 8px', fontSize: 12, cursor: 'pointer', minWidth: 28,
+  });
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      {/* Toolbar row */}
+      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#8b949e', display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
-          <span>🔍</span><span>Buscar...</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 6, padding: '6px 12px', fontSize: 12, color: '#8b949e', display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
+            <span>🔍</span><span>Buscar...</span>
+          </div>
+          {useCatalog && (
+            <span style={{ fontSize: 11, color: '#3fb950', background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.3)', padding: '3px 8px', borderRadius: 4, fontFamily: "'JetBrains Mono', monospace" }}>
+              📋 {tablaCatalog.name}
+            </span>
+          )}
         </div>
         {form.operations?.allow_insert && (
           <button style={{ background: '#238636', border: 'none', borderRadius: 6, color: '#fff', padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>+ Nuevo</button>
         )}
       </div>
-      {visibleFields.length === 0 ? (
+
+      {displayColumns.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '32px 0', color: '#8b949e', fontSize: 13 }}>Sin campos definidos</div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: '#161b22', borderBottom: '2px solid #21262d' }}>
-              {visibleFields.map(f => (
-                <th key={f.id} style={{ padding: '10px 14px', textAlign: 'left', color: '#8b949e', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.6px', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono', monospace" }}>
-                  {f.caption}{f.is_pk ? ' 🔑' : ''}{f.required ? ' *' : ''}
+              {displayColumns.map(col => (
+                <th key={col.id} style={{ padding: '10px 14px', textAlign: 'left', color: useCatalog ? '#3fb950' : '#8b949e', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.6px', whiteSpace: 'nowrap', fontFamily: "'JetBrains Mono', monospace" }}>
+                  {useCatalog ? col.label : (col.caption + (col.is_pk ? ' 🔑' : '') + (col.required ? ' *' : ''))}
+                  {useCatalog && col.type !== 'text' && <span style={{ color: '#484f58', fontWeight: 400 }}> :{col.type}</span>}
                 </th>
               ))}
               <th style={{ padding: '10px 14px', width: 80 }} />
             </tr>
           </thead>
           <tbody>
-            {mockRows.map((row, i) => (
+            {pageRows.map((row, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #21262d', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#161b22'}
                 onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)'}>
-                {visibleFields.map(f => (
-                  <td key={f.id} style={{ padding: '9px 14px', color: f.is_pk ? '#fbbf24' : '#c9d1d9', fontFamily: f.is_pk ? "'JetBrains Mono', monospace" : 'inherit', fontSize: 13 }}>
-                    {row[f.id]}
+                {displayColumns.map((col, ci) => (
+                  <td key={col.id} style={{ padding: '9px 14px', color: (!useCatalog && col.is_pk) ? '#fbbf24' : '#c9d1d9', fontFamily: (!useCatalog && col.is_pk) ? "'JetBrains Mono', monospace" : 'inherit', fontSize: 13 }}>
+                    {useCatalog
+                      ? (row[col.id] !== undefined ? String(row[col.id]) : '—')
+                      : row[col.id]}
                   </td>
                 ))}
                 <td style={{ padding: '6px 14px', textAlign: 'right' }}>
@@ -242,14 +311,19 @@ function GridPreview({ form }) {
           </tbody>
         </table>
       )}
-      {/* Pagination */}
-      {form.pagination?.enabled && visibleFields.length > 0 && (
+
+      {/* Pagination — always visible when there are columns */}
+      {displayColumns.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: '#8b949e' }}>
-          <span>Mostrando 1–3 de 3 registros</span>
+          <span>Mostrando {from}–{to} de {totalRows} registros</span>
           <div style={{ display: 'flex', gap: 4 }}>
-            {['‹', '1', '2', '3', '›'].map(p => (
-              <button key={p} style={{ background: p === '1' ? 'rgba(56,139,253,0.15)' : 'transparent', border: '1px solid', borderColor: p === '1' ? '#388bfd' : '#21262d', borderRadius: 4, color: p === '1' ? '#388bfd' : '#8b949e', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>{p}</button>
-            ))}
+            <button style={btnStyle(false)} onClick={() => setPage(p => Math.max(1, p - 1))} disabled={clampedPage === 1}>‹</button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              const pg = i + 1;
+              return <button key={pg} style={btnStyle(pg === clampedPage)} onClick={() => setPage(pg)}>{pg}</button>;
+            })}
+            {totalPages > 5 && <span style={{ padding: '3px 4px' }}>…</span>}
+            <button style={btnStyle(false)} onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={clampedPage === totalPages}>›</button>
           </div>
         </div>
       )}
@@ -288,8 +362,89 @@ function ModalPreview({ form, fields, FieldRenderer }) {
   );
 }
 
+function TablaFieldPreview({ field }) {
+  const catalogs = useContext(CatalogsCtx);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 5;
+
+  const cat = catalogs.find(c => c.id === field.tabla_config?.catalog_id);
+  const { columns, rows: catRows } = cat ? parseTableCatalog(cat) : { columns: [], rows: [] };
+
+  const allRows = catRows.length > 0
+    ? catRows
+    : columns.length > 0 ? Array.from({ length: 3 }, () => ({})) : [];
+
+  const totalRows = allRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / PER_PAGE));
+  const clampedPage = Math.min(page, totalPages);
+  const pageRows = allRows.slice((clampedPage - 1) * PER_PAGE, clampedPage * PER_PAGE);
+  const from = totalRows > 0 ? (clampedPage - 1) * PER_PAGE + 1 : 0;
+  const to = Math.min(clampedPage * PER_PAGE, totalRows);
+
+  const btnSt = (active, disabled) => ({
+    background: active ? 'rgba(63,185,80,0.15)' : 'transparent',
+    border: '1px solid', borderColor: active ? '#3fb950' : '#21262d',
+    borderRadius: 4, color: active ? '#3fb950' : disabled ? '#30363d' : '#8b949e',
+    padding: '3px 8px', fontSize: 12, cursor: disabled ? 'default' : 'pointer',
+  });
+
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#c9d1d9', marginBottom: 6 }}>
+        {field.caption}
+        {cat && <span style={{ marginLeft: 8, fontSize: 10, color: '#3fb950', fontFamily: "'JetBrains Mono', monospace", background: 'rgba(63,185,80,0.1)', padding: '1px 6px', borderRadius: 3 }}>📋 {cat.name}</span>}
+      </label>
+      <div style={{ border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', background: '#21262d' }}>
+          {columns.length === 0
+            ? <div style={{ padding: '8px 12px', fontSize: 12, color: '#8b949e', fontStyle: 'italic' }}>
+                {cat ? 'Sin columnas definidas en el catálogo' : 'Sin catálogo tabla asignado'}
+              </div>
+            : columns.map(col => (
+                <div key={col.id} style={{ flex: 1, padding: '8px 12px', fontSize: 11, fontWeight: 600, color: '#3fb950', borderRight: '1px solid #30363d', fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>
+                  {col.label || col.name}
+                  {col.type !== 'text' && <span style={{ color: '#484f58', fontWeight: 400 }}>:{col.type}</span>}
+                </div>
+              ))
+          }
+        </div>
+        {/* Data rows */}
+        {columns.length > 0 && pageRows.map((row, i) => (
+          <div key={i} style={{ display: 'flex', borderTop: '1px solid #21262d', background: i % 2 === 0 ? '#0d1117' : '#161b22' }}>
+            {columns.map(col => (
+              <div key={col.id} style={{ flex: 1, padding: '7px 12px', fontSize: 12, color: row[col.id] !== undefined ? '#c9d1d9' : '#484f58', borderRight: '1px solid #21262d', fontStyle: row[col.id] !== undefined ? 'normal' : 'italic' }}>
+                {row[col.id] !== undefined ? String(row[col.id]) : '—'}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Paginator */}
+      {columns.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, fontSize: 12, color: '#8b949e' }}>
+          <span>{totalRows > 0 ? `Mostrando ${from}–${to} de ${totalRows}` : `${columns.length} columnas definidas`}</span>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', gap: 3 }}>
+              <button style={btnSt(false, clampedPage === 1)} onClick={() => setPage(p => Math.max(1, p - 1))}>‹</button>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                const pg = i + 1;
+                return <button key={pg} style={btnSt(pg === clampedPage, false)} onClick={() => setPage(pg)}>{pg}</button>;
+              })}
+              {totalPages > 5 && <span style={{ padding: '3px 4px' }}>…</span>}
+              <button style={btnSt(false, clampedPage === totalPages)} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>›</button>
+            </div>
+          )}
+        </div>
+      )}
+      {field.help_text && <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>ℹ️ {field.help_text}</div>}
+    </div>
+  );
+}
+
 function FieldPreviewItem({ field }) {
   if (field.type === 'hidden') return null;
+  if (field.type === 'tabla') return <TablaFieldPreview field={field} />;
   const catalogs = useContext(CatalogsCtx);
   const labelStyle = { display: 'block', fontSize: 13, fontWeight: 500, color: '#c9d1d9', marginBottom: 6 };
   const inputStyle = { background: '#0d1117', border: '1px solid #21262d', borderRadius: 6, color: '#e6edf3', padding: '8px 12px', fontSize: 13, width: '100%', fontFamily: 'inherit' };
@@ -394,33 +549,6 @@ function FieldPreviewItem({ field }) {
                 <span style={{ fontSize: 13, color: i <= 1 ? '#e6edf3' : '#8b949e' }}>{ev}</span>
                 {i === 1 && <div style={{ fontSize: 11, color: '#8b949e', marginTop: 2 }}>En proceso — actualización en curso</div>}
               </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    if (field.type === 'tabla') {
-      const cat = catalogs.find(c => c.id === field.tabla_config?.catalog_id);
-      const cols = cat?.columns || [];
-      return (
-        <div style={{ border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}>
-          {/* Header row */}
-          <div style={{ display: 'flex', background: '#21262d' }}>
-            {cols.length === 0
-              ? <div style={{ padding: '8px 12px', fontSize: 12, color: '#8b949e', fontStyle: 'italic' }}>Sin catálogo tabla asignado</div>
-              : cols.map(col => (
-                  <div key={col.id} style={{ flex: 1, padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#3fb950', borderRight: '1px solid #30363d' }}>
-                    {col.label || col.name}
-                  </div>
-                ))
-            }
-          </div>
-          {/* 3 empty data rows */}
-          {cols.length > 0 && [0, 1, 2].map(row => (
-            <div key={row} style={{ display: 'flex', borderTop: '1px solid #21262d', background: row % 2 === 0 ? '#0d1117' : '#161b22' }}>
-              {cols.map(col => (
-                <div key={col.id} style={{ flex: 1, padding: '7px 12px', fontSize: 12, color: '#484f58', borderRight: '1px solid #21262d', fontStyle: 'italic' }}>—</div>
-              ))}
             </div>
           ))}
         </div>

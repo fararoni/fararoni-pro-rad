@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { ChevronRight, ChevronDown, Plus, Trash2, Search, GripVertical } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, Trash2, Search, GripVertical, Copy, Clipboard, CopyCheck } from 'lucide-react';
 import { useProjectStore } from '../store/useProjectStore';
 import { fieldTypeColor } from '../utils/schema';
 
@@ -19,6 +19,7 @@ export default function StructurePanel() {
     expandedNodes, toggleNode, expandNode,
     addPage, deletePage, addForm, deleteForm, addField, deleteField,
     addModule, deleteModule, moveForm, reorderForms, movePage, reorderFields,
+    duplicateForm, copyForm, pasteForm, clipboardForm,
   } = useProjectStore();
 
   const [search, setSearch] = useState('');
@@ -146,6 +147,14 @@ export default function StructurePanel() {
           <span style={{ fontSize: 12, fontWeight: 500, color: '#e6edf3', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {page.title}
           </span>
+          {clipboardForm && (
+            <button
+              title={`Pegar "${clipboardForm.title}" aquí`}
+              onClick={e => { e.stopPropagation(); pasteForm(page.id); expandNode(page.id); }}
+              style={{ background: 'rgba(56,139,253,0.15)', border: '1px solid #388bfd', cursor: 'pointer', color: '#388bfd', padding: '1px 6px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, flexShrink: 0 }}>
+              <Clipboard size={10} /> Pegar
+            </button>
+          )}
           {hovered === `page_${page.id}` && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <NodeBtn icon={Plus} title="Agregar formulario" onClick={e => handleAddForm(e, page.id)} />
@@ -208,6 +217,8 @@ export default function StructurePanel() {
                             {hovered === `form_${form.id}` && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 1, marginLeft: 4 }}>
                                 <NodeBtn icon={Plus} title="Agregar campo" onClick={e => handleAddField(e, page.id, form.id)} />
+                                <NodeBtn icon={CopyCheck} title="Duplicar formulario" onClick={e => { e.stopPropagation(); duplicateForm(page.id, form.id); }} />
+                                <NodeBtn icon={Copy} title="Copiar formulario" onClick={e => { e.stopPropagation(); copyForm(page.id, form.id); }} />
                                 <NodeBtn icon={Trash2} title="Eliminar formulario" onClick={e => { e.stopPropagation(); deleteForm(page.id, form.id); }} />
                               </div>
                             )}

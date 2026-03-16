@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { Section, Field, Toggle, RuleList } from './shared';
 import { FORM_TYPES, RULE_TYPES, genId } from '../../utils/schema';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X, Copy, CopyCheck, Clipboard } from 'lucide-react';
 
 const findPageAnywhere = (project, pageId) => {
   const p = project?.pages?.find(p => p.id === pageId);
@@ -15,7 +15,7 @@ const findPageAnywhere = (project, pageId) => {
 };
 
 export default function FormInspector({ pageId, formId }) {
-  const { currentProject, updateForm, addRule, updateRule, deleteRule } = useProjectStore();
+  const { currentProject, updateForm, addRule, updateRule, deleteRule, duplicateForm, copyForm, pasteForm, clipboardForm } = useProjectStore();
   const [showRulesModal, setShowRulesModal] = useState(false);
 
   const page = findPageAnywhere(currentProject, pageId);
@@ -50,6 +50,28 @@ export default function FormInspector({ pageId, formId }) {
 
   return (
     <div>
+      {/* Copy / Duplicate / Paste toolbar */}
+      <div style={{ display: 'flex', gap: 6, padding: '8px 12px', borderBottom: '1px solid #21262d', background: '#0d1117' }}>
+        <button title="Duplicar formulario" onClick={() => duplicateForm(pageId, formId)}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, padding: '5px 0', borderRadius: 6, border: '1px solid #21262d', background: 'transparent', color: '#8b949e', cursor: 'pointer' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#3fb950'; e.currentTarget.style.color = '#3fb950'; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#21262d'; e.currentTarget.style.color = '#8b949e'; }}>
+          <CopyCheck size={12} /> Duplicar
+        </button>
+        <button title="Copiar formulario al portapapeles" onClick={() => copyForm(pageId, formId)}
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, padding: '5px 0', borderRadius: 6, border: '1px solid #21262d', background: clipboardForm?.title === form.title + ' (pegado)' ? 'rgba(56,139,253,0.1)' : 'transparent', color: '#8b949e', cursor: 'pointer' }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#388bfd'; e.currentTarget.style.color = '#388bfd'; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#21262d'; e.currentTarget.style.color = '#8b949e'; }}>
+          <Copy size={12} /> Copiar
+        </button>
+        {clipboardForm && (
+          <button title={`Pegar "${clipboardForm.title}" en esta página`} onClick={() => pasteForm(pageId)}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11, padding: '5px 0', borderRadius: 6, border: '1px solid #388bfd', background: 'rgba(56,139,253,0.12)', color: '#388bfd', cursor: 'pointer' }}>
+            <Clipboard size={12} /> Pegar
+          </button>
+        )}
+      </div>
+
       <Section title="Propiedades">
         <Field label="Título">
           <input className="rad-input" value={form.title} onChange={e => set('title', e.target.value)} />

@@ -31,8 +31,24 @@ export default function FieldInspector({ pageId, formId, fieldId }) {
   const isTimeline = field.type === 'timeline';
   const isTabla = field.type === 'tabla';
   const setTabla = (key, val) => updateField(pageId, formId, fieldId, f => ({ ...f, tabla_config: { ...(f.tabla_config || {}), [key]: val } }));
-  const tablaCatalogs = catalogs.filter(c => c.input_mode === 'tabla');
+  const tablaCatalogs = catalogs.filter(c => c.input_mode === 'tabla' || c.input_mode === 'json');
   const selectedTablaCatalog = tablaCatalogs.find(c => c.id === (field.tabla_config?.catalog_id || ''));
+
+  // Extract columns regardless of catalog mode
+  const getColumnsFromCatalog = (cat) => {
+    if (!cat) return [];
+    if (cat.input_mode === 'tabla') return cat.columns || [];
+    if (cat.input_mode === 'json') {
+      try {
+        const data = JSON.parse(cat.data || '[]');
+        if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && !Array.isArray(data[0])) {
+          return Object.keys(data[0]).map(k => ({ id: k, name: k.toUpperCase(), label: k, type: 'text' }));
+        }
+      } catch {}
+    }
+    return [];
+  };
+  const selectedColumns = getColumnsFromCatalog(selectedTablaCatalog);
   const isGridForm = form?.type === 'grid';
 
   // Parent form step/tab/event assignment
@@ -276,17 +292,17 @@ export default function FieldInspector({ pageId, formId, fieldId }) {
         <Section title="Fuente de Tabla">
           {tablaCatalogs.length === 0 ? (
             <div style={{ fontSize: 12, color: '#8b949e', fontStyle: 'italic', lineHeight: 1.5 }}>
-              No hay catálogos de tipo <strong style={{ color: '#3fb950' }}>Tabla</strong> en el proyecto.<br />
+              No hay catálogos de tipo <strong style={{ color: '#3fb950' }}>Tabla</strong> o <strong style={{ color: '#388bfd' }}>JSON</strong> en el proyecto.<br />
               Crea uno en el inspector del Proyecto.
             </div>
           ) : (
-            <Field label="Catálogo tabla">
+            <Field label="Catálogo fuente">
               <select className="rad-input" value={field.tabla_config?.catalog_id || ''}
                 onChange={e => setTabla('catalog_id', e.target.value)}>
-                <option value="">— Selecciona un catálogo tabla —</option>
+                <option value="">— Selecciona un catálogo —</option>
                 {tablaCatalogs.map(cat => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.name}{cat.description ? ` — ${cat.description}` : ''} ({(cat.columns || []).length} cols)
+                    [{cat.input_mode.toUpperCase()}] {cat.name}{cat.description ? ` — ${cat.description}` : ''}
                   </option>
                 ))}
               </select>
@@ -296,27 +312,34 @@ export default function FieldInspector({ pageId, formId, fieldId }) {
           {selectedTablaCatalog && (
             <>
               <div style={{ background: '#0d1117', borderRadius: 8, border: '1px solid #21262d', padding: '10px 12px', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#3fb950', marginBottom: 6 }}>
-                  {selectedTablaCatalog.name}
-                  <span style={{ fontSize: 10, color: '#8b949e', fontWeight: 400, marginLeft: 8 }}>
-                    {(selectedTablaCatalog.columns || []).length} columnas
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#3fb950' }}>{selectedTablaCatalog.name}</div>
+                  <span style={{ fontSize: 10, color: '#8b949e', background: '#21262d', padding: '1px 5px', borderRadius: 3 }}>
+                    {selectedTablaCatalog.input_mode}
                   </span>
+                  <span style={{ fontSize: 10, color: '#8b949e', marginLeft: 'auto' }}>{selectedColumns.length} columnas</span>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {(selectedTablaCatalog.columns || []).map(col => (
-                    <span key={col.id} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", background: '#21262d', color: '#c9d1d9', padding: '2px 7px', borderRadius: 4 }}>
-                      {col.name}<span style={{ color: '#8b949e' }}>:{col.type}</span>
-                    </span>
-                  ))}
-                </div>
+                {selectedColumns.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {selectedColumns.map(col => (
+                      <span key={col.id || col.name} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", background: '#21262d', color: '#c9d1d9', padding: '2px 7px', borderRadius: 4 }}>
+                        {col.name}<span style={{ color: '#8b949e' }}>:{col.type}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#8b949e', fontStyle: 'italic' }}>
+                    {selectedTablaCatalog.input_mode === 'json' ? 'JSON vacío o sin estructura de objeto' : 'Sin columnas definidas'}
+                  </div>
+                )}
               </div>
 
-              {isGridForm && (
+              {isGridForm && selectedColumns.length > 0 && (
                 <button
                   className="rad-btn"
                   style={{ width: '100%', justifyContent: 'center', gap: 6, fontSize: 12, background: 'rgba(63,185,80,0.12)', borderColor: '#3fb950', color: '#3fb950' }}
                   onClick={() => {
-                    if (window.confirm(`¿Reemplazar todos los campos del formulario grid con las ${(selectedTablaCatalog.columns || []).length} columnas de "${selectedTablaCatalog.name}"?`)) {
+                    if (window.confirm(`¿Reemplazar todos los campos del formulario grid con las ${selectedColumns.length} columnas de "${selectedTablaCatalog.name}"?`)) {
                       fillGridFromCatalog(pageId, formId, selectedTablaCatalog.id);
                     }
                   }}>
