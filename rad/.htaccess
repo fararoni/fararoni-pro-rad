@@ -1,0 +1,32 @@
+# ─── Pro-RAD Backend — Apache Config ─────────────────────────────────────────
+
+Options -Indexes
+
+# ─── Denegar acceso directo a archivos JSON (proyectos y backups)
+<FilesMatch "\.(json|log)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# ─── Proteger carpetas sensibles
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Bloquear acceso a /projects/, /backups/, /logs/
+    RewriteRule ^(projects|backups|logs)/ - [F,L]
+
+    # Bloquear acceso directo a config.php desde el browser
+    RewriteRule ^config\.php$ - [F,L]
+</IfModule>
+
+# ─── Protección adicional para config.php
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# ─── Headers de seguridad
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+</IfModule>

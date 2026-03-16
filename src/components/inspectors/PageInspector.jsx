@@ -1,12 +1,27 @@
 import { useProjectStore } from '../../store/useProjectStore';
-import { Section, Field, Toggle, RuleList } from './shared';
+import { Section, Field, Toggle, RuleList, RolesSelector } from './shared';
 
-export default function PageInspector({ pageId }) {
+const findPageAnywhere = (project, pageId) => {
+  const p = project?.pages?.find(p => p.id === pageId);
+  if (p) return p;
+  for (const m of project?.modules || []) {
+    const pm = m.pages?.find(p => p.id === pageId);
+    if (pm) return pm;
+  }
+  return null;
+};
+
+export default function PageInspector({ pageId, moduleId }) {
   const { currentProject, updatePage, addRule, updateRule, deleteRule } = useProjectStore();
-  const page = currentProject?.pages?.find(p => p.id === pageId);
+  const page = findPageAnywhere(currentProject, pageId);
   if (!page) return null;
 
   const set = (key, val) => updatePage(pageId, { [key]: val });
+
+  const mod = moduleId ? currentProject?.modules?.find(m => m.id === moduleId) : null;
+  const modRoles = mod?.roles_allowed || [];
+  const projectRoles = currentProject?.meta?.roles || [];
+  const availableRoles = modRoles.length > 0 ? modRoles : projectRoles;
 
   return (
     <div>
@@ -19,9 +34,11 @@ export default function PageInspector({ pageId }) {
         </Field>
         <Field label="Layout">
           <select className="rad-input" value={page.layout} onChange={e => set('layout', e.target.value)}>
-            <option value="simple">Simple</option>
-            <option value="two_column">Dos columnas</option>
+            <option value="landing">Landing</option>
             <option value="dashboard">Dashboard</option>
+            <option value="aplicacion">Aplicación</option>
+            <option value="crud">CRUD</option>
+            <option value="limpio">Limpio</option>
           </select>
         </Field>
         <Field label="Nivel de Seguridad">
@@ -32,9 +49,12 @@ export default function PageInspector({ pageId }) {
             <option value={3}>3 — Superadmin</option>
           </select>
         </Field>
-        <Field label="Roles permitidos (coma separado)">
-          <input className="rad-input" value={(page.roles_allowed || []).join(', ')}
-            onChange={e => set('roles_allowed', e.target.value.split(',').map(r => r.trim()).filter(Boolean))} />
+        <Field label="Roles permitidos">
+          <RolesSelector
+            value={page.roles_allowed || []}
+            availableRoles={availableRoles}
+            onChange={val => set('roles_allowed', val)}
+          />
         </Field>
       </Section>
       <Section title="Reglas de Página" defaultOpen={false}>

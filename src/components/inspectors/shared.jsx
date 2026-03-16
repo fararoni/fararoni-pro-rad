@@ -47,6 +47,37 @@ export function Toggle({ label, value, onChange }) {
   );
 }
 
+/* ─── Roles selector ─── */
+export function RolesSelector({ value = [], availableRoles = [], onChange }) {
+  if (availableRoles.length === 0) {
+    return (
+      <input className="rad-input"
+        value={value.join(', ')}
+        onChange={e => onChange(e.target.value.split(',').map(r => r.trim()).filter(Boolean))}
+        placeholder="admin, usuario, ..." />
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {availableRoles.map(role => {
+        const active = value.includes(role);
+        return (
+          <button key={role} type="button"
+            onClick={() => onChange(active ? value.filter(r => r !== role) : [...value, role])}
+            style={{
+              padding: '3px 10px', borderRadius: 12, border: '1px solid', fontSize: 12, cursor: 'pointer',
+              borderColor: active ? '#388bfd' : '#21262d',
+              background: active ? 'rgba(56,139,253,0.15)' : 'transparent',
+              color: active ? '#388bfd' : '#8b949e',
+            }}>
+            {role}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Rule list editor ─── */
 export function RuleList({ rules = [], onAdd, onUpdate, onDelete }) {
   const [expandedRule, setExpandedRule] = useState(null);

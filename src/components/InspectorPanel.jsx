@@ -3,6 +3,7 @@ import ProjectInspector from './inspectors/ProjectInspector';
 import PageInspector from './inspectors/PageInspector';
 import FormInspector from './inspectors/FormInspector';
 import FieldInspector from './inspectors/FieldInspector';
+import ModuleInspector from './inspectors/ModuleInspector';
 import { Settings } from 'lucide-react';
 
 export default function InspectorPanel() {
@@ -19,7 +20,8 @@ export default function InspectorPanel() {
     }
     switch (selectedNode.type) {
       case 'project': return <ProjectInspector />;
-      case 'page':    return <PageInspector pageId={selectedNode.id} />;
+      case 'module':  return <ModuleInspector moduleId={selectedNode.id} />;
+      case 'page':    return <PageInspector pageId={selectedNode.id} moduleId={selectedNode.moduleId} />;
       case 'form':    return <FormInspector pageId={selectedNode.pageId} formId={selectedNode.id} />;
       case 'field':   return <FieldInspector pageId={selectedNode.pageId} formId={selectedNode.formId} fieldId={selectedNode.id} />;
       default:        return null;

@@ -1,0 +1,53 @@
+{
+    "schema_version": "2.0",
+    "meta": {
+        "spec_id": "czrkf4jd1",
+        "name": "Hola",
+        "version": "1.0.0",
+        "author": "",
+        "description": "sasdfasdf",
+        "created_at": "2026-03-15T02:03:52.973Z",
+        "updated_at": "2026-03-15T02:03:52.973Z",
+        "tags": []
+    },
+    "database": {
+        "type": "mysql",
+        "host": "localhost",
+        "port": 3306,
+        "name": "",
+        "schema": ""
+    },
+    "global_rules": [],
+    "navigation": {
+        "login_page": "",
+        "home_page": "",
+        "header_page": "",
+        "footer_page": "",
+        "menu_structure": []
+    },
+    "pages": [
+        {
+            "id": "a14savs6x",
+            "title": "Inicio",
+            "description": "",
+            "layout": "simple",
+            "security_level": 1,
+            "roles_allowed": [
+                "usuario"
+            ],
+            "is_generated": false,
+            "forms": [],
+            "page_rules": []
+        }
+    ],
+    "components_library": [],
+    "export_meta": {
+        "ai_context": "",
+        "tech_stack": [
+            "React",
+            "PHP"
+        ],
+        "conventions": [],
+        "open_issues": []
+    }
+}

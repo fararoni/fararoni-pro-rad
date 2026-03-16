@@ -14,6 +14,7 @@ export const FIELD_TYPES = [
   { value: 'hidden',     label: 'Oculto',        group: 'Básicos' },
   { value: 'label',      label: 'Etiqueta',      group: 'Básicos' },
   { value: 'richtext',   label: 'Texto enriquecido', group: 'Básicos' },
+  { value: 'timeline',   label: 'Línea del tiempo',  group: 'Básicos' },
   { value: 'listbox',    label: 'Lista desplegable', group: 'Selección' },
   { value: 'multiselect',label: 'Multiselección', group: 'Selección' },
   { value: 'radio',      label: 'Radio',         group: 'Selección' },
@@ -24,6 +25,7 @@ export const FIELD_TYPES = [
   { value: 'file',       label: 'Archivo',       group: 'Acción' },
   { value: 'nav_menu',   label: 'Menú de navegación', group: 'Layout' },
   { value: 'copyright',  label: 'Copyright',     group: 'Layout' },
+  { value: 'tabla',      label: 'Tabla',          group: 'Datos' },
 ];
 
 export const FORM_TYPES = [
@@ -36,6 +38,9 @@ export const FORM_TYPES = [
   { value: 'footer', label: 'Footer — Pie de página' },
   { value: 'hero',   label: 'Hero — Sección principal destacada' },
   { value: 'modal',  label: 'Modal — Ventana emergente' },
+  { value: 'wizard',   label: 'Wizard — Formulario multi-paso' },
+  { value: 'tabs',     label: 'Tabs — Formulario con pestañas' },
+  { value: 'timeline', label: 'Timeline — Línea del tiempo' },
 ];
 
 export const DB_TYPES = ['oracle','mysql','postgres','mssql','sqlite'];
@@ -55,7 +60,7 @@ export const fieldTypeColor = (type) => {
     datetime: '#bc8cff', hidden: '#8b949e', label: '#8b949e', richtext: '#388bfd',
     listbox: '#d97706', multiselect: '#d97706', radio: '#d97706', checkbox: '#d97706',
     url_link: '#3fb950', button: '#f85149', image: '#bc8cff', file: '#3fb950',
-    nav_menu: '#388bfd', copyright: '#8b949e',
+    nav_menu: '#388bfd', copyright: '#8b949e', timeline: '#bc8cff', tabla: '#3fb950',
   };
   return map[type] || '#8b949e';
 };
@@ -71,14 +76,9 @@ export const newProject = (data) => ({
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     tags: data.tags ? data.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+    roles: [],
   },
-  database: {
-    type: data.db_type || 'mysql',
-    host: data.db_host || 'localhost',
-    port: data.db_port || 3306,
-    name: data.db_name || '',
-    schema: data.db_schema || '',
-  },
+  catalogs: [],
   global_rules: [],
   navigation: {
     login_page: '',
@@ -88,6 +88,7 @@ export const newProject = (data) => ({
     menu_structure: [],
   },
   pages: data.firstPage ? [newPage(data.firstPage)] : [],
+  modules: [],
   components_library: [],
   export_meta: {
     ai_context: '',
@@ -97,11 +98,19 @@ export const newProject = (data) => ({
   },
 });
 
+export const newModule = (name = 'Nuevo Módulo') => ({
+  id: genId(),
+  title: name,
+  description: '',
+  roles_allowed: [],
+  pages: [],
+});
+
 export const newPage = (name = 'Nueva Página') => ({
   id: genId(),
   title: name,
   description: '',
-  layout: 'simple',
+  layout: 'limpio',
   security_level: 1,
   roles_allowed: ['usuario'],
   is_generated: false,
@@ -128,6 +137,12 @@ const defaultFieldsFor = (type) => {
   return [];
 };
 
+const defaultMenuItems = () => [
+  { id: genId(), label: 'Inicio',        url: '#', icon: '' },
+  { id: genId(), label: 'Módulo 1',      url: '#', icon: '' },
+  { id: genId(), label: 'Configuración', url: '#', icon: '' },
+];
+
 export const newForm = (name, type = 'record') => {
   const title = name || DEFAULT_FORM_TITLES[type] || 'Nuevo Formulario';
   return {
@@ -140,6 +155,10 @@ export const newForm = (name, type = 'record') => {
     operations: { allow_insert: true, allow_update: true, allow_delete: false, allow_search: true, allow_export: false },
     pagination: { enabled: false, records_per_page: 20, show_prev_next: true, show_page_numbers: true },
     layout: { orientation: 'vertical', grid_type: 'tabular' },
+    menu_config: { direction: 'horizontal', items: type === 'menu' ? defaultMenuItems() : [] },
+    wizard_config: type === 'wizard' ? { steps: ['Paso 1', 'Paso 2', 'Confirmación'] } : undefined,
+    tabs_config: type === 'tabs' ? { tabs: ['Pestaña 1', 'Pestaña 2'] } : undefined,
+    timeline_config: type === 'timeline' ? { orientation: 'horizontal', events: ['Inicio', 'En progreso', 'Revisión', 'Completado'] } : undefined,
     parameters: [],
     fields: defaultFieldsFor(type),
     rules: [],
@@ -163,7 +182,12 @@ export const newField = (name = 'NUEVO_CAMPO') => ({
   default_value: '',
   placeholder: '',
   help_text: '',
-  lookup: { table: '', id_field: '', name_field: '', sql: '', lov: '' },
+  lookup: { table: '', id_field: '', name_field: '', sql: '', lov: '', catalog_id: '' },
+  tabla_config: { catalog_id: '' },
+  timeline_config: { orientation: 'horizontal', events: ['Evento 1', 'Evento 2', 'Evento 3'] },
+  wizard_step: 0,
+  tab_index: 0,
+  timeline_event: 0,
   validations: [],
   display_rules: [],
 });

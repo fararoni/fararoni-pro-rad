@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import { newPage, newForm, newField, newRule, genId } from '../utils/schema';
+import { newPage, newForm, newField, newRule, newModule, genId } from '../utils/schema';
 
 // API config - can be changed via window.RAD_CONFIG
 const getApiBase = () => {
   if (typeof window !== 'undefined' && window.RAD_CONFIG?.apiBase) return window.RAD_CONFIG.apiBase;
-  return '/api.php';
+  return 'http://localhost/rad/api.php';
 };
 const getToken = () => {
   if (typeof window !== 'undefined' && window.RAD_CONFIG?.token) return window.RAD_CONFIG.token;
@@ -16,10 +16,36 @@ const apiHeaders = () => ({
   'X-RAD-Token': getToken(),
 });
 
+// Universal page finder
+const _findPage = (project, pageId) => {
+  const p = project?.pages?.find(p => p.id === pageId);
+  if (p) return p;
+  for (const m of project?.modules || []) {
+    const pm = m.pages?.find(p => p.id === pageId);
+    if (pm) return pm;
+  }
+  return null;
+};
+
+// Universal page updater (updates page wherever it lives)
+const _updatePageInProject = (project, pageId, updater) => {
+  const fn = typeof updater === 'function' ? updater : (p) => ({ ...p, ...updater });
+  if (project.pages?.find(p => p.id === pageId)) {
+    return { ...project, pages: project.pages.map(p => p.id === pageId ? fn(p) : p) };
+  }
+  return {
+    ...project,
+    modules: (project.modules || []).map(m => ({
+      ...m,
+      pages: (m.pages || []).map(p => p.id === pageId ? fn(p) : p),
+    })),
+  };
+};
+
 export const useProjectStore = create((set, get) => ({
   // UI state
   screen: 'home',           // 'home' | 'editor'
-  selectedNode: null,       // { type: 'project'|'page'|'form'|'field', id, pageId?, formId? }
+  selectedNode: null,       // { type: 'project'|'module'|'page'|'form'|'field', id, moduleId?, pageId?, formId? }
   editorMode: 'editor',     // 'editor' | 'preview'
   saveStatus: 'saved',      // 'saved' | 'saving' | 'error' | 'unsaved'
   projects: [],             // list of {id, name, updated_at, page_count}
@@ -149,29 +175,138 @@ export const useProjectStore = create((set, get) => ({
   },
 
   // Page operations
-  addPage: () => {
+  addPage: (moduleId) => {
     const page = newPage();
-    set(state => ({
-      currentProject: { ...state.currentProject, pages: [...(state.currentProject.pages || []), page] },
-      selectedNode: { type: 'page', id: page.id },
-      saveStatus: 'unsaved',
-    }));
-    get().expandNode(state => state.currentProject?.meta?.spec_id);
+    set(state => {
+      let project;
+      if (moduleId) {
+        project = {
+          ...state.currentProject,
+          modules: (state.currentProject.modules || []).map(m =>
+            m.id === moduleId ? { ...m, pages: [...(m.pages || []), page] } : m
+          ),
+        };
+      } else {
+        project = {
+          ...state.currentProject,
+          pages: [...(state.currentProject.pages || []), page],
+        };
+      }
+      return {
+        currentProject: project,
+        selectedNode: { type: 'page', id: page.id, moduleId: moduleId || undefined },
+        saveStatus: 'unsaved',
+      };
+    });
     return page;
   },
 
   updatePage: (pageId, updater) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p =>
-        p.id === pageId ? (typeof updater === 'function' ? updater(p) : { ...p, ...updater }) : p
-      );
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+      const project = _updatePageInProject(state.currentProject, pageId, updater);
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
-  deletePage: (pageId) => {
+  deletePage: (pageId, moduleId) => {
+    set(state => {
+      let project;
+      if (moduleId) {
+        project = {
+          ...state.currentProject,
+          modules: (state.currentProject.modules || []).map(m =>
+            m.id === moduleId ? { ...m, pages: (m.pages || []).filter(p => p.id !== pageId) } : m
+          ),
+        };
+      } else {
+        project = { ...state.currentProject, pages: state.currentProject.pages.filter(p => p.id !== pageId) };
+      }
+      const backNode = moduleId ? { type: 'module', id: moduleId } : { type: 'project' };
+      return { currentProject: project, selectedNode: backNode, saveStatus: 'unsaved' };
+    });
+  },
+
+  // Page reorder / move across modules
+  movePage: (pageId, srcModuleId, dstModuleId, dstIndex) => {
+    set(state => {
+      let movedPage = null;
+      let project = state.currentProject;
+
+      // Remove from source
+      if (!srcModuleId) {
+        movedPage = project.pages?.find(p => p.id === pageId);
+        project = { ...project, pages: project.pages.filter(p => p.id !== pageId) };
+      } else {
+        const srcMod = project.modules?.find(m => m.id === srcModuleId);
+        movedPage = srcMod?.pages?.find(p => p.id === pageId);
+        project = {
+          ...project,
+          modules: project.modules.map(m =>
+            m.id === srcModuleId ? { ...m, pages: (m.pages || []).filter(p => p.id !== pageId) } : m
+          ),
+        };
+      }
+
+      if (!movedPage) return {};
+
+      // Insert at destination
+      if (!dstModuleId) {
+        const pages = [...(project.pages || [])];
+        pages.splice(dstIndex, 0, movedPage);
+        project = { ...project, pages };
+      } else {
+        project = {
+          ...project,
+          modules: project.modules.map(m => {
+            if (m.id !== dstModuleId) return m;
+            const pages = [...(m.pages || [])];
+            pages.splice(dstIndex, 0, movedPage);
+            return { ...m, pages };
+          }),
+        };
+      }
+
+      const selectedNode = state.selectedNode?.id === pageId
+        ? { type: 'page', id: pageId, moduleId: dstModuleId || undefined }
+        : state.selectedNode;
+
+      return { currentProject: project, selectedNode, saveStatus: 'unsaved' };
+    });
+  },
+
+  // Module operations
+  addModule: () => {
+    const mod = newModule();
     set(state => ({
-      currentProject: { ...state.currentProject, pages: state.currentProject.pages.filter(p => p.id !== pageId) },
+      currentProject: {
+        ...state.currentProject,
+        modules: [...(state.currentProject.modules || []), mod],
+      },
+      selectedNode: { type: 'module', id: mod.id },
+      saveStatus: 'unsaved',
+    }));
+    return mod;
+  },
+
+  updateModule: (moduleId, updater) => {
+    set(state => {
+      const fn = typeof updater === 'function' ? updater : (m) => ({ ...m, ...updater });
+      return {
+        currentProject: {
+          ...state.currentProject,
+          modules: (state.currentProject.modules || []).map(m => m.id === moduleId ? fn(m) : m),
+        },
+        saveStatus: 'unsaved',
+      };
+    });
+  },
+
+  deleteModule: (moduleId) => {
+    set(state => ({
+      currentProject: {
+        ...state.currentProject,
+        modules: (state.currentProject.modules || []).filter(m => m.id !== moduleId),
+      },
       selectedNode: { type: 'project' },
       saveStatus: 'unsaved',
     }));
@@ -181,11 +316,11 @@ export const useProjectStore = create((set, get) => ({
   addForm: (pageId, type) => {
     const form = newForm(undefined, type);
     set(state => {
-      const pages = state.currentProject.pages.map(p =>
-        p.id === pageId ? { ...p, forms: [...(p.forms || []), form] } : p
-      );
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: [...(p.forms || []), form],
+      }));
       return {
-        currentProject: { ...state.currentProject, pages },
+        currentProject: project,
         selectedNode: { type: 'form', id: form.id, pageId },
         saveStatus: 'unsaved',
       };
@@ -195,38 +330,53 @@ export const useProjectStore = create((set, get) => ({
 
   updateForm: (pageId, formId, updater) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        return { ...p, forms: p.forms.map(f =>
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.map(f =>
           f.id === formId ? (typeof updater === 'function' ? updater(f) : { ...f, ...updater }) : f
-        )};
-      });
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+        ),
+      }));
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
   deleteForm: (pageId, formId) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p =>
-        p.id === pageId ? { ...p, forms: p.forms.filter(f => f.id !== formId) } : p
-      );
-      return { currentProject: { ...state.currentProject, pages }, selectedNode: { type: 'page', id: pageId }, saveStatus: 'unsaved' };
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.filter(f => f.id !== formId),
+      }));
+      return { currentProject: project, selectedNode: { type: 'page', id: pageId }, saveStatus: 'unsaved' };
+    });
+  },
+
+  moveForm: (formId, sourcePageId, targetPageId, targetIndex) => {
+    set(state => {
+      let movedForm = null;
+      let project = _updatePageInProject(state.currentProject, sourcePageId, p => {
+        movedForm = p.forms?.find(f => f.id === formId);
+        return { ...p, forms: (p.forms || []).filter(f => f.id !== formId) };
+      });
+      if (!movedForm) return {};
+      project = _updatePageInProject(project, targetPageId, p => {
+        const forms = [...(p.forms || [])];
+        forms.splice(targetIndex, 0, movedForm);
+        return { ...p, forms };
+      });
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
   // Field operations
-  addField: (pageId, formId) => {
-    const field = newField();
+  addField: (pageId, formId, extraData = {}) => {
+    const field = { ...newField(), ...extraData };
     set(state => {
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        return { ...p, forms: p.forms.map(f => {
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.map(f => {
           if (f.id !== formId) return f;
           return { ...f, fields: [...(f.fields || []), field] };
-        })};
-      });
+        }),
+      }));
       return {
-        currentProject: { ...state.currentProject, pages },
+        currentProject: project,
         selectedNode: { type: 'field', id: field.id, pageId, formId },
         saveStatus: 'unsaved',
       };
@@ -236,39 +386,99 @@ export const useProjectStore = create((set, get) => ({
 
   updateField: (pageId, formId, fieldId, updater) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        return { ...p, forms: p.forms.map(f => {
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.map(f => {
           if (f.id !== formId) return f;
           return { ...f, fields: f.fields.map(fld =>
             fld.id === fieldId ? (typeof updater === 'function' ? updater(fld) : { ...fld, ...updater }) : fld
           )};
-        })};
-      });
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+        }),
+      }));
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
   deleteField: (pageId, formId, fieldId) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        return { ...p, forms: p.forms.map(f => {
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.map(f => {
           if (f.id !== formId) return f;
           return { ...f, fields: f.fields.filter(fld => fld.id !== fieldId) };
-        })};
-      });
-      return { currentProject: { ...state.currentProject, pages }, selectedNode: { type: 'form', id: formId, pageId }, saveStatus: 'unsaved' };
+        }),
+      }));
+      return { currentProject: project, selectedNode: { type: 'form', id: formId, pageId }, saveStatus: 'unsaved' };
     });
   },
 
   reorderFields: (pageId, formId, fields) => {
     set(state => {
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        return { ...p, forms: p.forms.map(f => f.id === formId ? { ...f, fields } : f) };
-      });
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p, forms: p.forms.map(f => f.id === formId ? { ...f, fields } : f),
+      }));
+      return { currentProject: project, saveStatus: 'unsaved' };
+    });
+  },
+
+  reorderForms: (pageId, forms) => {
+    set(state => {
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({ ...p, forms }));
+      return { currentProject: project, saveStatus: 'unsaved' };
+    });
+  },
+
+  // Catalog operations
+  addCatalog: () => {
+    const catalog = { id: genId(), name: 'NUEVO_CATALOGO', description: '', input_mode: 'comma', data: '' };
+    set(state => ({
+      currentProject: {
+        ...state.currentProject,
+        catalogs: [...(state.currentProject.catalogs || []), catalog],
+      },
+      saveStatus: 'unsaved',
+    }));
+    return catalog;
+  },
+
+  updateCatalog: (catalogId, updater) => {
+    set(state => {
+      const fn = typeof updater === 'function' ? updater : (c) => ({ ...c, ...updater });
+      return {
+        currentProject: {
+          ...state.currentProject,
+          catalogs: (state.currentProject.catalogs || []).map(c => c.id === catalogId ? fn(c) : c),
+        },
+        saveStatus: 'unsaved',
+      };
+    });
+  },
+
+  deleteCatalog: (catalogId) => {
+    set(state => ({
+      currentProject: {
+        ...state.currentProject,
+        catalogs: (state.currentProject.catalogs || []).filter(c => c.id !== catalogId),
+      },
+      saveStatus: 'unsaved',
+    }));
+  },
+
+  fillGridFromCatalog: (pageId, formId, catalogId) => {
+    set(state => {
+      const catalog = (state.currentProject.catalogs || []).find(c => c.id === catalogId);
+      if (!catalog || catalog.input_mode !== 'tabla' || !(catalog.columns || []).length) return {};
+      const typeMap = { text: 'text', number: 'number', currency: 'currency', date: 'date', boolean: 'checkbox', email: 'email' };
+      const generatedFields = catalog.columns.map(col => ({
+        ...newField(col.name),
+        caption: col.label || col.name,
+        type: typeMap[col.type] || 'text',
+        description: `Generado desde catálogo ${catalog.name}`,
+        tabla_config: { catalog_id: catalogId },
+      }));
+      const project = _updatePageInProject(state.currentProject, pageId, p => ({
+        ...p,
+        forms: p.forms.map(f => f.id === formId ? { ...f, fields: generatedFields } : f),
+      }));
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
@@ -276,17 +486,20 @@ export const useProjectStore = create((set, get) => ({
   addRule: (level, pageId, formId) => {
     const rule = newRule();
     set(state => {
-      let pages = state.currentProject.pages;
-      if (level === 'form') {
-        pages = pages.map(p => p.id !== pageId ? p : {
-          ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: [...(f.rules || []), rule] })
-        });
-      } else if (level === 'page') {
-        pages = pages.map(p => p.id !== pageId ? p : { ...p, page_rules: [...(p.page_rules || []), rule] });
-      } else {
+      if (level === 'global') {
         return { currentProject: { ...state.currentProject, global_rules: [...(state.currentProject.global_rules || []), rule] }, saveStatus: 'unsaved' };
       }
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+      let project;
+      if (level === 'form') {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: [...(f.rules || []), rule] }),
+        }));
+      } else {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, page_rules: [...(p.page_rules || []), rule],
+        }));
+      }
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
     return rule;
   },
@@ -297,12 +510,17 @@ export const useProjectStore = create((set, get) => ({
       if (level === 'global') {
         return { currentProject: { ...state.currentProject, global_rules: updateRuleIn(state.currentProject.global_rules || []) }, saveStatus: 'unsaved' };
       }
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        if (level === 'page') return { ...p, page_rules: updateRuleIn(p.page_rules || []) };
-        return { ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: updateRuleIn(f.rules || []) }) };
-      });
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+      let project;
+      if (level === 'page') {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, page_rules: updateRuleIn(p.page_rules || []),
+        }));
+      } else {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: updateRuleIn(f.rules || []) }),
+        }));
+      }
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 
@@ -312,12 +530,17 @@ export const useProjectStore = create((set, get) => ({
       if (level === 'global') {
         return { currentProject: { ...state.currentProject, global_rules: removeRule(state.currentProject.global_rules) }, saveStatus: 'unsaved' };
       }
-      const pages = state.currentProject.pages.map(p => {
-        if (p.id !== pageId) return p;
-        if (level === 'page') return { ...p, page_rules: removeRule(p.page_rules) };
-        return { ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: removeRule(f.rules) }) };
-      });
-      return { currentProject: { ...state.currentProject, pages }, saveStatus: 'unsaved' };
+      let project;
+      if (level === 'page') {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, page_rules: removeRule(p.page_rules),
+        }));
+      } else {
+        project = _updatePageInProject(state.currentProject, pageId, p => ({
+          ...p, forms: p.forms.map(f => f.id !== formId ? f : { ...f, rules: removeRule(f.rules) }),
+        }));
+      }
+      return { currentProject: project, saveStatus: 'unsaved' };
     });
   },
 }));

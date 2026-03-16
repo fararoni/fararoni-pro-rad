@@ -1,0 +1,3 @@
+# Denegar TODO acceso a esta carpeta desde el navegador
+Order Allow,Deny
+Deny from all
